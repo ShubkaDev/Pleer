@@ -1,0 +1,9 @@
+# Скопируйте этот файл в android/key.properties и впишите свои значения.
+# key.properties в git не попадает (см. android/.gitignore).
+#
+# storeFile — путь к вашему .jks относительно папки android/
+#   например: app/upload-keystore.jks или ../keys/pleer-release.jks
+storeFile=app/upload-keystore.jks
+storePassword=ВАШ_ПАРОЛЬ_ХРАНИЛИЩА
+keyAlias=upload
+keyPassword=ВАШ_ПАРОЛЬ_КЛЮЧА

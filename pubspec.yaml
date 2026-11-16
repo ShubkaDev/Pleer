@@ -1,0 +1,63 @@
+name: pleer
+description: "Универсальный медиа-центр: аудио, видео и запись (звук/экран/камера)."
+publish_to: "none"
+version: 2.8.1+281
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Воспроизведение
+  just_audio: ^0.9.36
+  just_audio_windows: ^0.2.0
+  audio_service: ^0.18.12
+
+  # Сканирование библиотеки музыки
+  on_audio_query: ^2.9.0
+
+  # Хранилище
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Настройки и темы
+  shared_preferences: ^2.2.2
+  provider: ^6.1.1
+  path_provider: ^2.1.2
+
+  # Dark заметки форматирование времени
+  intl: ^0.20.2
+  url_launcher: ^6.3.0
+  permission_handler: ^12.0.3
+
+  # ---- Видео ----
+  video_player: ^2.8.2
+  chewie: ^1.7.5
+  screen_brightness: ^0.2.2
+  wakelock_plus: ^1.2.5
+
+  # ---- Запись ----
+  record: ^6.2.1
+
+dependency_overrides:
+  win32: ^5.5.0
+  # Локальная исправленная версия (namespace + современный AGP)
+  on_audio_query_android:
+    path: plugins/on_audio_query_android
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.8
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/backgrounds/
