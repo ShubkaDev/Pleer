@@ -247,7 +247,7 @@ static const _presets = <String, List<double>>{
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.multitool.audio.channel',
           androidNotificationChannelName: 'Воспроизведение',
-          androidNotificationIcon: 'mipmap/ic_launcher',
+          androidNotificationIcon: 'drawable/ic_stat_pleer',
           androidNotificationOngoing: false,
           // false: сервис остаётся в foreground и на паузе — иначе уведомление
           // гаснет и воспроизведение больше не возобновляется.
@@ -299,10 +299,15 @@ static const _presets = <String, List<double>>{
     final artist = t.artist.trim().isNotEmpty
         ? t.artist.trim()
         : (t.album.trim().isNotEmpty ? t.album.trim() : 'Pleer');
+    // Пустой заголовок Android показывает как название приложения,
+    // поэтому всегда подставляем осмысленный текст.
+    final title = t.displayTitle.trim().isNotEmpty
+        ? t.displayTitle.trim()
+        : 'Без названия';
     try {
       await h.updateMediaItem(MediaItem(
         id: 'pleer_${t.id}',
-        title: t.displayTitle,
+        title: title,
         artist: artist,
         album: t.album,
         duration: t.durationMs > 0 ? Duration(milliseconds: t.durationMs) : null,
@@ -314,6 +319,10 @@ static const _presets = <String, List<double>>{
   }
 
   Uri? _lastArtUri;
+
+  /// Повторная публикация текущего трека. Вызывается из аудио-хендлера, когда
+  /// Android-сервис поднялся позже, чем трек был отправлен в уведомление.
+  Future<void> ensureMediaPublished() => _publishMediaItem();
 
   Future<void> refreshLibrary() async {
     if (!_permissionGranted) {
@@ -1154,6 +1163,11 @@ class _PlayerAudioHandler extends BaseAudioHandler {
         processingState: _mapState(e.processingState),
         updatePosition: _player.position,
       ));
+      // Android рисует название/обложку только если в сервис пришёл MediaItem.
+      // Если он потерялся (сервис поднялся позже трека) — досылаем.
+      if (mediaItem.value == null && _ctrl.currentTrack != null) {
+        _ctrl.ensureMediaPublished();
+      }
     });
     _player.positionStream.listen((p) {
       playbackState.add(playbackState.value.copyWith(updatePosition: p));
