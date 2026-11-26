@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import '../data/models.dart';
 import '../logic/player_controller.dart';
 import '../services/favorites_store.dart';
 import '../services/playlist_store.dart';
+import '../services/thumbnail_service.dart';
 import '../theme/design.dart';
 import 'now_playing_screen.dart';
 import 'playlists_screen.dart';
@@ -15,6 +17,8 @@ import 'settings_screen.dart';
 import 'video_player_screen.dart';
 import 'widgets/app_background.dart';
 import 'widgets/glass_card.dart';
+import 'widgets/route_transitions.dart';
+import 'widgets/sort_controls.dart';
 import 'widgets/track_art.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -169,6 +173,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   audioTab: _audioTab,
                   onChanged: (t) => setState(() => _audioTab = t),
                 ),
+              if (_section == 0 && (_audioTab == 0 || _audioTab == 3))
+                const SortControls(compact: true),
               Expanded(
                 child: _section == 0
                     ? _audioContent(ctrl)
@@ -194,11 +200,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_audioTab == 2) {
       return _PlaylistsTab();
     }
-    final source = _audioTab == 3
+    final base = _audioTab == 3
         ? ctrl.allTracks
             .where((t) => FavoritesStore.instance.isFavorite(t.id))
             .toList()
         : ctrl.allTracks;
+    final source = ctrl.sortTracks(base);
 
     if (ctrl.allTracks.isEmpty) {
       return _EmptyState(
@@ -256,12 +263,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.82,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
+        crossAxisCount: 3,
+        childAspectRatio: 0.72,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
       ),
       itemCount: ctrl.videos.length,
       itemBuilder: (context, i) {
@@ -558,7 +565,10 @@ class _TrackRowState extends State<_TrackRow> {
               ),
         onTap: widget.selectionMode
             ? widget.onToggleSelected
-            : () => ctrl.playTracks(widget.list, startIndex: widget.index),
+            : () {
+                ctrl.playTracks(widget.list, startIndex: widget.index);
+                Navigator.of(context).push(playerRoute(const NowPlayingScreen()));
+              },
         onLongPress: widget.onLongPress,
       ),
     );
@@ -936,21 +946,63 @@ class _PlaylistsTabState extends State<_PlaylistsTab> {
 
 // ---------- Видео ----------
 
-class _VideoCard extends StatelessWidget {
+class _VideoCard extends StatefulWidget {
   const _VideoCard({required this.video, required this.videos});
 
   final VideoItem video;
   final List<VideoItem> videos;
 
   @override
+  State<_VideoCard> createState() => _VideoCardState();
+}
+
+class _VideoCardState extends State<_VideoCard> {
+  Uint8List? _thumb;
+  bool _loaded = false;
+
+  VideoItem get video => widget.video;
+  List<VideoItem> get videos => widget.videos;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThumb();
+  }
+
+  Future<void> _loadThumb() async {
+    if (ThumbnailService.knows(video.data)) {
+      if (!mounted) return;
+      setState(() {
+        _thumb = ThumbnailService.cached(video.data);
+        _loaded = true;
+      });
+      return;
+    }
+    final bytes = await ThumbnailService.videoThumb(video.data);
+    if (!mounted) return;
+    setState(() {
+      _thumb = bytes;
+      _loaded = true;
+    });
+  }
+
+  void _open() {
+    Navigator.of(context).push(
+      playerRoute(VideoPlayerScreen(video: video, playlist: videos)),
+    );
+  }
+
+  String _fmtDuration(int ms) {
+    final total = ms ~/ 1000;
+    final m = total ~/ 60;
+    final s = total % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => VideoPlayerScreen(video: video, playlist: videos),
-        ),
-      ),
+      onTap: _open,
       onLongPress: () => _menu(context),
       child: ClipRRect(
         borderRadius: PleerDesign.brMd,
@@ -960,48 +1012,83 @@ class _VideoCard extends StatelessWidget {
             const DecoratedBox(
               decoration: BoxDecoration(gradient: PleerDesign.brandGradientSoft),
             ),
-            const Center(
-              child: Icon(Icons.movie, color: Colors.white54, size: 42),
-            ),
-            const Center(
-              child: Icon(Icons.play_circle_fill, color: Colors.white, size: 52),
-            ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(8),
+            if (_thumb != null)
+              Image.memory(
+                _thumb!,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.low,
+              )
+            else if (_loaded)
+              const Center(
+                child: Icon(Icons.movie, color: Colors.white54, size: 30),
+              ),
+            Positioned.fill(
+              child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.75),
+                      Colors.black.withValues(alpha: 0.72),
                     ],
+                    stops: const [0.5, 1],
                   ),
                 ),
-                child: Text(
-                  video.displayTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+            Center(
+              child: Icon(
+                Icons.play_circle_fill,
+                color: Colors.white.withValues(alpha: 0.9),
+                size: 34,
+              ),
+            ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      video.displayTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10.5,
+                        height: 1.15,
+                      ),
+                    ),
+                    if (video.durationMs > 0)
+                      Text(
+                        _fmtDuration(video.durationMs),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 9,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
             Positioned(
-              top: 4,
-              right: 4,
+              top: 2,
+              right: 2,
               child: Material(
-                color: Colors.black.withValues(alpha: 0.38),
+                color: Colors.black.withValues(alpha: 0.35),
                 shape: const CircleBorder(),
                 child: InkWell(
                   customBorder: const CircleBorder(),
                   onTap: () => _menu(context),
                   child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.more_vert, color: Colors.white, size: 18),
+                    padding: EdgeInsets.all(3),
+                    child: Icon(Icons.more_vert, color: Colors.white, size: 16),
                   ),
                 ),
               ),
@@ -1025,9 +1112,8 @@ class _VideoCard extends StatelessWidget {
               onTap: () {
                 Navigator.pop(ctx);
                 final nav = Navigator.of(outer);
-                nav.push(MaterialPageRoute(
-                  builder: (_) =>
-                      VideoPlayerScreen(video: video, playlist: videos),
+                nav.push(playerRoute(
+                  VideoPlayerScreen(video: video, playlist: videos),
                 ));
               },
             ),
@@ -1095,7 +1181,7 @@ class _PlayerBar extends StatelessWidget {
         child: InkWell(
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const NowPlayingScreen()),
+            playerRoute(const NowPlayingScreen()),
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),

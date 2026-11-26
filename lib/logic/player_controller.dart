@@ -19,7 +19,7 @@ import '../services/widget_service.dart';
 
 enum RepeatMode { off, all, one }
 
-enum SortMode { title, artist, album, dateAdded, duration }
+enum SortMode { title, dateAdded }
 
 class PlayerController extends ChangeNotifier {
   AudioPlayer? _player;
@@ -861,38 +861,22 @@ static const _presets = <String, List<double>>{
     notifyListeners();
   }
 
-  /// Возвращает треки библиотеки в выбранном порядке.
+  /// Возвращает треки библиотеки в выбранном порядке:
+  /// по названию или по дате добавления.
   List<Track> sortTracks(List<Track> input) {
     final list = List.of(input);
-    int cmp(String a, String b) {
-      final r = a.toLowerCase().compareTo(b.toLowerCase());
-      return _sortAscending ? r : -r;
-    }
-
     switch (_sortMode) {
-      case SortMode.artist:
-        list.sort((a, b) {
-          final r = cmp(a.displayArtist, b.displayArtist);
-          return r != 0 ? r : cmp(a.displayAlbum, b.displayAlbum);
-        });
-        break;
-      case SortMode.album:
-        list.sort((a, b) {
-          final r = cmp(a.displayAlbum, b.displayAlbum);
-          return r != 0 ? r : cmp(a.displayArtist, b.displayArtist);
-        });
-        break;
       case SortMode.dateAdded:
         list.sort((a, b) =>
             _sortAscending ? a.dateAdded - b.dateAdded : b.dateAdded - a.dateAdded);
         break;
-      case SortMode.duration:
-        list.sort((a, b) =>
-            _sortAscending ? a.durationMs - b.durationMs : b.durationMs - a.durationMs);
-        break;
       case SortMode.title:
-      default:
-        list.sort((a, b) => cmp(a.displayTitle, b.displayTitle));
+        list.sort((a, b) {
+          final r = a.displayTitle
+              .toLowerCase()
+              .compareTo(b.displayTitle.toLowerCase());
+          return _sortAscending ? r : -r;
+        });
     }
     return list;
   }

@@ -5,8 +5,8 @@ import '../data/models.dart';
 import '../logic/player_controller.dart';
 import '../services/favorites_store.dart';
 import '../services/playlist_store.dart';
-import 'now_playing_screen.dart';
 import 'widgets/glass_card.dart';
+import 'widgets/sort_controls.dart';
 import 'widgets/track_art.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -153,60 +153,10 @@ class _FilterBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           const Spacer(),
-          PopupMenuButton<SortMode>(
-            icon: const Icon(Icons.sort),
-            tooltip: 'Сортировка',
-            onSelected: (mode) => ctrl.setSortMode(mode),
-            itemBuilder: (ctx) => [
-              for (final m in SortMode.values)
-                PopupMenuItem(
-                  value: m,
-                  child: Row(
-                    children: [
-                      Icon(
-                        m == SortMode.title
-                            ? Icons.sort_by_alpha
-                            : m == SortMode.artist
-                                ? Icons.person
-                                : m == SortMode.album
-                                    ? Icons.album
-                                    : m == SortMode.dateAdded
-                                        ? Icons.date_range
-                                        : Icons.timer_outlined,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(_sortLabel(m)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          IconButton(
-            icon: Icon(
-              ctrl.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-            ),
-            tooltip: 'Порядок',
-            onPressed: () => ctrl.setSortAscending(!ctrl.sortAscending),
-          ),
+          const SortControls(compact: true),
         ],
       ),
     );
-  }
-
-  String _sortLabel(SortMode m) {
-    switch (m) {
-      case SortMode.title:
-        return 'По названию';
-      case SortMode.artist:
-        return 'По исполнителю';
-      case SortMode.album:
-        return 'По альбому';
-      case SortMode.dateAdded:
-        return 'По дате';
-      case SortMode.duration:
-        return 'По длительности';
-    }
   }
 }
 

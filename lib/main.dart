@@ -7,9 +7,11 @@ import 'data/models.dart';
 import 'i18n/strings.dart';
 import 'logic/player_controller.dart';
 import 'screens/home_screen.dart';
+import 'screens/now_playing_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/video_player_screen.dart';
 import 'screens/widgets/app_background.dart';
+import 'screens/widgets/route_transitions.dart';
 import 'services/background_service.dart';
 import 'services/favorites_store.dart';
 import 'services/intent_media_service.dart';
@@ -61,35 +63,62 @@ Future<void> main() async {
   runApp(MultiToolPlayerApp(controller: controller));
 }
 
+/// Файлы, открытые из проводника до готовности навигатора: на холодном старте
+/// intent приходит раньше первого кадра, и открыть экран ещё некуда.
+final List<Map<String, String>> _pendingExternalMedia = [];
+
 /// Обработка открытия файла из проводника (Android).
 void _setupExternalMedia(PlayerController controller) {
-  IntentMediaService.init((media) async {
-    final uriStr = media['uri'] ?? '';
-    if (uriStr.isEmpty) return;
-    final type = media['type'] ?? '';
-    final name = media['name'] ?? '';
-    final uri = Uri.parse(uriStr);
+  IntentMediaService.init((media) => _handleExternalMedia(controller, media));
+}
 
-    if (type.startsWith('video')) {
-      final video = VideoItem(
-        id: uriStr.hashCode,
-        data: uriStr,
-        title: name,
-        album: '',
-        artist: '',
-        durationMs: 0,
-        size: 0,
-        dateAdded: 0,
-      );
-      appNavigatorKey.currentState?.push(
-        MaterialPageRoute(
-          builder: (_) => VideoPlayerScreen(video: video, playlist: [video]),
-        ),
-      );
-    } else {
-      await controller.playExternal(uri, title: name);
-    }
-  });
+Future<void> _handleExternalMedia(
+  PlayerController controller,
+  Map<String, String> media,
+) async {
+  final uriStr = media['uri'] ?? '';
+  if (uriStr.isEmpty) return;
+  final nav = appNavigatorKey.currentState;
+  if (nav == null) {
+    // Навигатор ещё не поднялся — отдадим файл после первого кадра.
+    _pendingExternalMedia.add(media);
+    return;
+  }
+  final type = media['type'] ?? '';
+  final name = media['name'] ?? '';
+  final uri = Uri.parse(uriStr);
+
+  if (type.startsWith('video')) {
+    final video = VideoItem(
+      id: uriStr.hashCode,
+      data: uriStr,
+      title: name,
+      album: '',
+      artist: '',
+      durationMs: 0,
+      size: 0,
+      dateAdded: 0,
+    );
+    nav.push(
+      playerRoute(VideoPlayerScreen(video: video, playlist: [video])),
+    );
+    return;
+  }
+
+  await controller.playExternal(uri, title: name);
+  // Сразу открываем плеер: иначе звук стартует «в фоне» и непонятно, что
+  // файл вообще открылся.
+  nav.push(playerRoute(const NowPlayingScreen()));
+}
+
+/// Отдаёт накопленные файлы, когда навигатор уже готов принимать маршруты.
+Future<void> _flushExternalMedia(PlayerController controller) async {
+  if (_pendingExternalMedia.isEmpty) return;
+  final items = List<Map<String, String>>.of(_pendingExternalMedia);
+  _pendingExternalMedia.clear();
+  for (final item in items) {
+    await _handleExternalMedia(controller, item);
+  }
 }
 
 class MultiToolPlayerApp extends StatefulWidget {
@@ -107,6 +136,10 @@ class _MultiToolPlayerAppState extends State<MultiToolPlayerApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Файл, открытый из проводника на холодном старте, ждёт первого кадра.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _flushExternalMedia(widget.controller);
+    });
   }
 
   @override

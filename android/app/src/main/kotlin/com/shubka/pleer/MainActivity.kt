@@ -4,15 +4,20 @@ import android.app.Activity
 import android.app.PictureInPictureParams
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.content.ContentUris
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Rational
+import android.util.Size
 import android.media.MediaScannerConnection
+import java.io.ByteArrayOutputStream
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.BinaryMessenger
@@ -244,6 +249,12 @@ class MainActivity : AudioServiceActivity() {
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     intentEventSink = events
+                    // Если файл пришёл до того, как Dart подписался на поток,
+                    // отдаём его из очереди, иначе запуск «из проводника» терялся.
+                    pendingMedia?.let {
+                        events?.success(it)
+                        pendingMedia = null
+                    }
                 }
 
                 override fun onCancel(arguments: Any?) {
@@ -251,6 +262,17 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
         )
+
+        // Превью видео для сетки (MediaStore / MediaMetadataRetriever)
+        MethodChannel(messenger, "multitool.thumbs").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "videoThumb" -> {
+                    val uri = call.argument<String>("uri") ?: ""
+                    result.success(loadVideoThumb(uri))
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         // Обновление виджета на главном экране
         MethodChannel(messenger, "multitool.widget").setMethodCallHandler { call, result ->
@@ -293,12 +315,61 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
+    /// Кадр-превью для видео: сначала MediaStore, затем MediaMetadataRetriever.
+    private fun loadVideoThumb(uriStr: String): ByteArray? {
+        if (uriStr.isEmpty()) return null
+        val uri = Uri.parse(uriStr)
+        var bmp: Bitmap? = null
+        try {
+            bmp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver.loadThumbnail(uri, Size(360, 220), null)
+            } else {
+                MediaStore.Video.Thumbnails.getThumbnail(
+                    contentResolver,
+                    ContentUris.parseId(uri),
+                    MediaStore.Video.Thumbnails.MINI_KIND,
+                    null
+                )
+            }
+        } catch (_: Exception) {
+            bmp = null
+        }
+        if (bmp == null) {
+            val mmr = MediaMetadataRetriever()
+            try {
+                if (uri.scheme == null || uri.scheme == "file") {
+                    mmr.setDataSource(uri.path ?: uriStr)
+                } else {
+                    mmr.setDataSource(this, uri)
+                }
+                bmp = mmr.getFrameAtTime(1_000_000)
+            } catch (_: Exception) {
+                bmp = null
+            } finally {
+                try {
+                    mmr.release()
+                } catch (_: Exception) {
+                }
+            }
+        }
+        val frame = bmp ?: return null
+        return try {
+            ByteArrayOutputStream().use { out ->
+                frame.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                out.toByteArray()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         val media = extractMedia(intent)
         if (media != null) {
-            intentEventSink?.success(media)
+            val sink = intentEventSink
+            if (sink != null) sink.success(media) else pendingMedia = media
         }
     }
 
